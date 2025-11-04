@@ -1,0 +1,2144 @@
+substitutions:
+  tv_vol_control: media_player.my_tv
+  light_control: light.all_lights
+   # Substitutions for audio files
+  wake_word_triggered_sound_file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/wake_word_triggered.flac
+  
+
+esphome:
+  name: m5stack-tab5
+  friendly_name: M5Stack Tab5
+  platformio_options: 
+    build_flags: "-DBOARD_HAS_PSRAM"
+    board_build.esp-idf.memory_type: qio_opi
+    board_build.flash_mode: dio
+    board_upload.maximum_ram_size: 524288
+    board_build.flash_size: 16MB
+
+esp32:
+  board: esp32-p4-evboard
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    version: recommended
+    sdkconfig_options:
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
+      # Moves instructions and read only data from flash into PSRAM on boot.
+      # Both enabled allows instructions to execute while a flash operation is in progress without needing to be placed in IRAM.
+      # Considerably speeds up mWW at the cost of using more PSRAM.
+      CONFIG_SPIRAM_RODATA: "y"
+      EXECUTE_FROM_PSRAM: "y" 
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: "y"
+      CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
+      CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
+      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"  # TLS1.3 support isn't enabled by default in IDF 5.1.5    
+      CONFIG_CAMERA_SC2336: "y"
+      CONFIG_SPIRAM: "y" 
+      CONFIG_SPIRAM_SPEED_200M: "y" 
+      CONFIG_EXAMPLE_ENABLE_CAM_SENSOR_PIC_HFLIP: "y" 
+      CONFIG_EXAMPLE_ENABLE_CAM_SENSOR_PIC_VFLIP: "y" 
+      CONFIG_EXAMPLE_VIDEO_BUFFER_TYPE_DRIVER: "y" 
+      CONFIG_ESP_VIDEO_ENABLE_HW_H264_VIDEO_DEVICE: "y"
+      CONFIG_ESP_VIDEO_ENABLE_HW_JPEG_VIDEO_DEVICE: " y"
+    advanced:
+      enable_idf_experimental_features: true
+     # execute_from_psram: true
+
+esp32_hosted:
+  variant: esp32c6
+  active_high: true
+  clk_pin: GPIO12
+  cmd_pin: GPIO13
+  d0_pin: GPIO11
+  d1_pin: GPIO10
+  d2_pin: GPIO9
+  d3_pin: GPIO8
+  reset_pin: GPIO15
+  slot: 1
+
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+
+psram:
+  mode: hex
+  speed: 200MHz
+
+api:
+  encryption:
+    key: !secret m5tab_api
+
+ota:
+  - platform: esphome
+    id: my_ota
+    password:  !secret m5tab_ota
+
+wifi:
+  id: wifi_id
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password 
+  use_address: 192.168.0.174
+
+network:
+  enable_ipv6: false  
+
+i2c:
+  - id: bsp_bus
+    sda: GPIO31
+    scl: GPIO32
+    frequency: 400kHz
+
+pi4ioe5v6408:
+  - id: pi4ioe1
+    address: 0x43
+    # 0: O - wifi_antenna_int_ext
+    # 1: O - speaker_enable
+    # 2: O - external_5v_power
+    # 3: NC
+    # 4: O - lcd reset
+    # 5: O - touch panel reset
+    # 6: O - camera reset
+    # 7: I - headphone detect
+  - id: pi4ioe2
+    address: 0x44
+    # 0: O - wifi_power
+    # 1: NC
+    # 2: NC
+    # 3: O - usb_5v_power
+    # 4: O - poweroff pulse
+    # 5: O - quick charge enable (inverted)
+    # 6: I - charging status
+    # 7: O - charge enable 
+  
+switch:
+  - platform: gpio
+    id: wifi_power
+    name: "WiFi Power"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 0
+    restore_mode: ALWAYS_ON
+  - platform: gpio
+    id: usb_5v_power
+    name: "USB Power"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 3
+  - platform: gpio
+    id: quick_charge
+    name: "Quick Charge"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 5
+      inverted: true
+  - platform: gpio
+    id: charge_enable
+    name: "Charge Enable"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 7
+
+  - platform: gpio
+    id: wifi_antenna_int_ext
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 0
+  - platform: gpio
+    id: speaker_enable
+    name: "Speaker Enable"
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 1
+    restore_mode: ALWAYS_ON
+  - platform: gpio
+    id: external_5v_power
+    name: "External 5V Power"
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 2
+      
+  # Wake Word Sound Switch.
+  - platform: template
+    id: wake_sound
+    name: Wake sound
+    icon: "mdi:bullhorn"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON         
+
+binary_sensor:
+  - platform: homeassistant
+    id: ac_i
+    entity_id: switch.air_conditioner
+    trigger_on_initial_state: true
+    on_state:
+      then:
+        lvgl.widget.update:
+          id: ac_pic
+          outline_opa: 70%
+          outline_color: 0xffffff
+          state:
+            checked: !lambda return x;
+  - platform: homeassistant
+    id: tv_r
+    entity_id: media_player.television
+    trigger_on_initial_state: true
+    on_state:
+      then:
+        lvgl.widget.update:
+          id: tv_id
+          outline_opa: 70%
+          outline_color: 0xffffff          
+          state:
+            checked: !lambda return x;  
+              
+  - platform: gpio
+    id: charging
+    name: "Charging Status"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 6
+      mode: INPUT_PULLDOWN
+
+  - platform: gpio
+    id: headphone_detect
+    name: "Headphone Detect"
+    filters:
+      - delayed_on: 200ms
+      - delayed_off: 200ms    
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 7
+
+sensor:
+  - platform: ina226
+    address: 0x41
+    adc_averaging: 16
+    max_current: 8.192A
+    shunt_resistance: 0.005ohm
+    bus_voltage:
+      name: Battery Voltage
+    current:
+      name: Battery Current
+      # Positive means discharging
+      # Negative means charging    
+
+  - platform: homeassistant
+    id: media_player_state
+    entity_id: $tv_vol_control
+    attribute: volume_level
+    on_value:
+      - lvgl.slider.update:
+        #  bg_color: 0xd84315
+          id: slider_media_player
+          value: !lambda return (x * 100);
+     # - lvgl.label.update:
+     #     id: brightness_label
+     #     text:
+     #       format: "%d%%"
+     #       args: [ 'map(x,0,255,0,100)' ]  
+  - platform: homeassistant
+    id: light_slider
+    entity_id: $light_control
+    attribute: brightness
+    on_value: 
+      then:
+      - lvgl.slider.update:
+          id: slider_id2
+     #     bg_color: 0x7cb342
+          value: !lambda return x;
+     # - lvgl.label.update:
+     #     id: brightness_label
+     #     text:
+     #       format: "%d%%"
+     #       args: [ 'map(x,0,255,0,100)' ]       
+  - platform: homeassistant
+    id: volume_level
+    entity_id: $tv_vol_control
+    attribute: volume_level 
+  - platform: homeassistant
+    id: light_state
+    entity_id: $light_control
+    attribute: brightness  
+  #- platform: homeassistant
+  #  id: is_muted
+  #  entity_id: $tv_vol_control
+  #  attribute: is_volume_muted
+    
+
+
+    
+number:
+  - platform: template
+    name: m5tab screen timeout
+    optimistic: true
+    id: display_timeout
+    unit_of_measurement: "s"
+    initial_value: 90
+    restore_value: true
+    min_value: 1
+    max_value: 180
+    step: 5
+    mode: box  
+
+  - platform: template
+    name: screen brightness
+    optimistic: true    
+    id: brightness_label
+    min_value: 8
+    max_value: 255
+    step: 5
+    mode: box
+ #   value: 128
+    on_value:
+      - light.turn_on:
+          id: backlight
+          brightness: !lambda 'return x / 255;'      
+
+touchscreen:
+  - platform: gt911
+    interrupt_pin: GPIO23
+    display: my_lcd
+    update_interval: never
+    reset_pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 5
+    transform:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: false      
+    calibration:
+      x_min: 0
+      x_max: 1280
+      y_min: 0
+      y_max: 720
+    id: my_touchscreen
+    on_release:
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - logger.log: "LVGL resuming"
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - light.turn_on: backlight  
+    
+esp_ldo:
+  - voltage: 2.5V
+    channel: 3
+
+display:
+  - platform: mipi_dsi
+    id: my_lcd
+    dimensions:
+      height: 1280
+      width: 720
+    model: M5Stack-Tab5
+   # invert_colors: true
+    reset_pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 4
+   # show_test_card: true
+    rotation: 270
+
+output:
+  - platform: ledc
+    pin: GPIO22
+    id: backlight_pwm
+    frequency: 1000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "Display Backlight"
+    id: backlight
+    default_transition_length: 250ms
+    restore_mode: ALWAYS_ON   
+    initial_state:
+      brightness: "50%"    
+    
+image:
+#  - file: "StormTrooper.jpg"
+  - file: "PCZOeXX.jpg"
+ # - file: "iMxtvf3.jpg" 
+ # - file: "OoTEqcB.jpg"
+ # - file: "GdwwIo2.jpg"
+ # - file: "boba_fett.jpg"
+ # - file: "st_bg2.jpg"
+    id: star_wars
+    resize: 1300x800
+    type: RGB565
+    byte_order: little_endian 
+    
+  - file: mdi:home-assistant
+    id: assist
+    type: grayscale
+    transparency: alpha_channel
+    resize: 125x125
+
+  - file: mdi:stop-circle-outline
+    id: stop_mdi
+    type: grayscale
+    transparency: alpha_channel
+   # invert_alpha: true
+    resize: 125x125
+
+  - file: mdi:stop-circle
+    id: stop_mdi_2
+    type: grayscale
+    transparency: alpha_channel
+    resize: 140x140 
+
+  - file: mdi:home-variant-outline                                                  
+    id: sony_home
+    type: grayscale
+    transparency: alpha_channel
+    resize: 180x180    
+    
+  - file: mdi:home-variant-outline                                                  
+    id: sony_home_2
+    type: grayscale
+    transparency: alpha_channel
+    resize: 150x150
+
+  - file: mdi:kodi
+    id: kodi_icon
+    type: grayscale
+    transparency: alpha_channel
+    resize: 180x180
+
+  - file: mdi:kodi
+    id: kodi_icon_2
+    type: grayscale
+    transparency: alpha_channel
+    resize: 150x150
+
+  - file: mdi:keyboard-return
+    id: sony_back
+    type: grayscale
+    transparency: alpha_channel
+    resize: 180x180          
+    
+  - file: mdi:keyboard-return
+    id: sony_back_2
+    type: grayscale
+    transparency: alpha_channel
+    resize: 150x150
+
+  - file: mdi:video-input-hdmi
+    id: sony_input_2
+    type: grayscale
+    transparency: alpha_channel
+    resize: 180x180
+
+  - file: mdi:video-input-hdmi
+    id: sony_input_2_2
+    type: grayscale
+    transparency: alpha_channel
+    resize: 150x150
+
+  - file: mdi:chevron-double-up
+    id: vup
+    type: grayscale
+    resize: 180x180
+    transparency: alpha_channel
+
+  - file: mdi:chevron-double-up
+    id: vup_2
+    type: grayscale
+    transparency: alpha_channel
+    resize: 150x150
+
+  - file: mdi:chevron-double-down
+    id: vdn
+    type: grayscale
+    resize: 180x180
+    transparency: alpha_channel
+
+ # - file: mdi:arrow-down-circle
+  - file: mdi:chevron-double-down
+    id: vdn_2
+    type: grayscale
+    resize: 150x150
+    transparency: alpha_channel
+
+  - file: mdi:menu-up-outline
+    id: dir_up
+    type: grayscale
+    resize: 180x180     
+    transparency: alpha_channel    
+
+  - file: mdi:menu-right-outline
+    id: dir_right
+    type: grayscale
+    resize: 180x180     
+    transparency: alpha_channel    
+
+  - file: mdi:menu-left-outline
+    id: dir_left
+    type: grayscale
+    resize: 180x180     
+    transparency: alpha_channel    
+
+  - file: mdi:menu-down-outline
+    id: dir_down
+    type: grayscale
+    resize: 180x180     
+    transparency: alpha_channel    
+
+  - file: mdi:menu-up-outline
+    id: dir_up_2
+    type: grayscale
+    resize: 150x150     
+    transparency: alpha_channel    
+
+  - file: mdi:menu-right-outline
+    id: dir_right_2
+    type: grayscale
+    resize: 150x150     
+    transparency: alpha_channel    
+
+  - file: mdi:menu-left-outline
+    id: dir_left_2
+    type: grayscale
+    resize: 150x150     
+    transparency: alpha_channel    
+
+  - file: mdi:menu-down-outline
+    id: dir_down_2
+    type: grayscale
+    resize: 150x150     
+    transparency: alpha_channel 
+
+  - file: "darth_vader.png"
+    id: darth
+    type: RGB565
+    resize: 150x150
+    transparency: alpha_channel
+    byte_order: little_endian
+    
+  - file: mdi:lightbulb-multiple-outline
+    id: dlight
+    type: grayscale
+    resize: 180x180     
+    transparency: alpha_channel    
+
+  - file: mdi:lightbulb-multiple-outline
+    id: dlight_2
+    type: grayscale
+    resize: 150x150     
+    transparency: alpha_channel    
+
+  - file: mdi:play-outline
+    id: playpause
+    type: grayscale
+    resize: 180x180   
+    transparency: alpha_channel    
+
+  - file: mdi:play-outline
+    id: playpause_2
+    type: grayscale
+    resize: 150x150  
+    transparency: alpha_channel   
+
+  - file: mdi:lightbulb-outline
+    id: alb
+    type: grayscale
+    resize: 180x180     
+    transparency: alpha_channel
+
+  - file: mdi:lightbulb-outline
+    id: alb_2
+    type: grayscale
+    resize: 150x150     
+    transparency: alpha_channel
+
+  - file: mdi:youtube
+    id: yt
+    resize: 180x180
+    type: grayscale
+    transparency: alpha_channel
+
+  - file: mdi:youtube
+    id: yt_2
+    resize: 150x150
+    type: grayscale
+    transparency: alpha_channel
+
+  - file: mdi:air-conditioner
+    id: ac_btn
+    type: grayscale
+    resize: 75x75
+    transparency: alpha_channel
+
+  - file: mdi:television
+    id: tvpwr
+    type: grayscale
+    resize: 125x125     
+    transparency: alpha_channel
+ 
+lvgl:
+  buffer_size: 100%
+  byte_order: little_endian
+  on_idle:
+    timeout: !lambda "return (id(display_timeout).state * 1000);"
+    then:
+      - logger.log: "LVGL is idle"
+      - light.turn_off: 
+          id: backlight
+          transition_length: 15s
+      - lvgl.pause:  
+  top_layer:
+    widgets: 
+ ##     modeL real        
+      # make sure it's the last one in this list:
+   #   - obj:
+     #     id: boot_screen
+     #     x: 0
+    #      y: 0
+     #     width: 100%
+     #     height: 100%
+     #     bg_color: 0x000000
+    #      bg_opa: COVER
+      #    radius: 0
+  #        pad_all: 0
+    #      border_width: 0
+   #       widgets:
+    #        - image:
+     #           align: CENTER
+     #           src: boot_logo
+       #         y: -20
+      #      - spinner:
+        #        align: CENTER
+           #     y: 65
+        #        height: 50
+           #     width: 50
+         #       spin_time: 1s
+         #       arc_length: 60deg
+       #         arc_width: 8
+         #       indicator:
+        #          arc_color: 0x18bcf2
+        #          arc_width: 8
+       #   on_press:
+      #        - lvgl.widget.hide: boot_screen
+      # # widgets:
+      - buttonmatrix:
+          align: bottom_mid
+          styles: header_footer
+          pad_all: 0
+          outline_opa: 70%
+          outline_width: 4
+          outline_color: 0xffffff
+          id: top_layer
+          items:
+            styles: header_footer
+          rows:
+            - buttons:
+              - id: page_prev
+                text: "\uF053"
+                on_press:
+                  then:
+                    lvgl.page.previous:
+              - id: page_home
+                text: "\uF015"
+                on_press:
+                  then:
+                    lvgl.page.show: coverpage
+              - id: page_next
+                text: "\uF054"
+                on_press:
+                  then:
+                    lvgl.page.next:                  
+  
+  displays:
+    - my_lcd
+  touchscreens:
+    - my_touchscreen
+  pages:
+    - id: coverpage
+      bg_image_src: star_wars
+     # bg_color: 0x5f6160
+     # mode: REAL
+     # border_width: 30
+     # pad_right: 30
+      widgets:
+       # bg_color: 0x000000
+        
+        # - obj:
+        #    align: TOP_MID
+        #    styles: header_footer
+        #    widgets:
+        #      - label:
+        #          text: "ESPHome LVGL Display"
+        #          align: CENTER
+        #          text_align: CENTER
+        #          text_color: 0x000000    
+
+        - slider:
+            x: 35
+      #      y: 175
+            y: 130
+            width: 660
+            height: 75
+            id: slider_media_player
+            bg_opa: 70%            
+            border_width: 3
+            bg_color: 0xd84315
+            bg_grad_color: 0x0a3eda
+            bg_grad_dir: HOR
+            border_opa: 90%
+            image_recolor_opa: 30%
+            line_color: 0xffffff
+            border_color: 0x7cb342
+            bg_image_recolor_opa: 70%    
+       #     bg_color: !lambda return lv_color_hex(0xffffff); 
+            bg_image_recolor: 0xaa0100
+         #   outline_opa: 70%
+            outline_width: 1
+            outline_color: 0xffffff
+            pad_all: 0
+            value: 0
+            min_value: 0
+            max_value: 100
+            adv_hittest: true
+            anim_time: 200ms
+            #adjustable: true
+            knob:
+                radius: 1
+                width: 1
+              #  align: CENTER
+                height: 100%
+                bg_color: 0xffffff
+            #    bg_color_opa: 95%
+                bg_opa: COVER
+                pad_top: 5
+                pad_bottom: 5
+                pad_right: -38
+                pad_left: -38
+           # adjustable: true
+            indicator:
+                radius: 1
+                width: 1
+                #align: CENTER
+                bg_grad_color: 0xf0e0a1
+                bg_grad_dir: HOR
+                bg_color: 0xaa0100                
+                height: 100%
+                pad_top: 4
+                pad_bottom: 4
+                pad_right: 3
+                pad_left: 3
+             #   pad_all: 4
+           #     pad_bottom: -30
+                bg_opa: 50%
+              #  image_recolor_opa: 70%
+            on_release:            
+                - homeassistant.service:
+                    service: media_player.volume_set
+                    data:
+                      entity_id: $tv_vol_control
+                      volume_level: !lambda return (x / 100);        
+
+        - slider:
+            x: 35
+      #      y: 75
+            y: 30
+            width: 660
+            height: 75
+            id: slider_id2
+            bg_opa: 70%
+            border_width: 3
+        #    align: CENTER
+            line_color: 0xffffff
+            bg_grad_color: 0xf0e0a1
+            bg_grad_dir: HOR
+            border_opa: 90%
+            image_recolor_opa: 30%
+            border_color: 0x7cb342
+            bg_image_recolor_opa: 70%            
+       #     bg_color: !lambda return lv_color_hex(0xffffff); 
+            bg_image_recolor: 0x7cb342
+         #   outline_opa: 70%
+            outline_width: 1
+            outline_color: 0xffffff            
+            bg_color: 0x7cb342
+            pad_all: 0
+            value: 0
+            min_value: 1
+            max_value: 255
+            anim_time: 100ms
+            knob:
+                radius: 1
+                width: 1
+              #  align: CENTER
+                height: 100%
+                bg_color: 0xffffff
+            #    bg_color_opa: 95%
+                bg_opa: COVER
+                pad_top: 4
+                pad_bottom: 4
+                pad_right: -38
+                pad_left: -38
+           # adjustable: true
+            indicator:
+                radius: 1
+                width: 1
+                #align: CENTER
+                bg_grad_color: 0xf1e0f0
+           #     bg_grad_color: 0xffffff
+                bg_grad_dir: HOR
+                height: 100%
+                pad_top: 4
+                pad_bottom: 4
+                pad_right: 3
+                pad_left: 3
+             #   pad_all: 4
+           #     pad_bottom: -30
+                bg_color: 0xf0e0a1
+                bg_opa: 90%
+          #      image_recolor_opa: 90%
+            on_click:            
+                - homeassistant.service:
+                    service: light.turn_on
+                    data:
+                      entity_id: $light_control
+                      brightness: !lambda return int(x);  
+
+
+        - button:
+            y: 230
+            x: 525
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+          #  bg_image_opa: 10%
+            widgets:
+              - image:
+                  align: CENTER
+                  src: vdn_2        
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+              - animimg:
+                  align: CENTER
+                  id: anim_id
+                  src: [ vdn_2, vdn ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false
+            pressed: # set some button colors to be different in pressed state
+                  bg_color: 0xffffff
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 90%
+                  bg_image_opa: 1%
+                  outline_width: 8
+                  outline_opa: COVER
+                  outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id
+                      repeat_count: 5
+        #            duration: 300ms
+                - homeassistant.service:
+                    service: media_player.volume_down
+                    data:
+                      entity_id: media_player.television                                      
+
+        - button:
+            x: 525
+            y: 65
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+            widgets:
+              - image:
+                  align: CENTER
+                  src: vup_2      
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+              - animimg:
+                  align: CENTER
+                  id: anim_id2
+                  src: [ vup_2, vup ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false
+            pressed: # set some button colors to be different in pressed state
+                  bg_color: 0xffffff
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 90%
+                  outline_width: 8
+                  bg_image_opa: 20%
+                  outline_opa: COVER
+                  outline_color: 0x000000
+            on_press:
+              then:     
+                - lvgl.animimg.update:
+                      id: anim_id2
+                      repeat_count: 5
+        #            duration: 300ms
+                - homeassistant.service:
+                    service: media_player.volume_up
+                    data:
+                      entity_id: media_player.television      
+
+        - button: 
+            id: tv_id2
+            y: -100
+            x: 525
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 1%
+         #   checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: alb_2
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x5f61fa   
+          #        radius: 2400
+              - animimg:
+                  align: CENTER
+                  id: anim_id5
+                  src: [ alb_2, alb ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x5f61fa
+                  auto_start: false                             
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%  
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id5
+                      repeat_count: 5
+        #            duration: 300ms   
+                - homeassistant.service:
+                    service: scene.turn_on
+                    data:
+                      entity_id: scene.attic_blue                    
+
+        - button: 
+            id: tv_id
+            y: -265
+            x: 525
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+            checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: tvpwr
+                  image_recolor_opa: COVER
+                  image_recolor: 0xc02d50                   
+            on_press:        
+              - homeassistant.service:
+                  action: media_player.toggle
+                  data:
+                    entity_id: media_player.television    
+          #  pressed: # set some button colors to be different in pressed state
+             # bg_color: 0xffffff
+             # bg_grad_color: 0x00334d
+          #    bg_opa: TRANSP
+            checked: # set some button colors to be different in checked state
+          #   # bg_color: 0xffffff
+          #   # bg_grad_color: 0x03324A
+              bg_opa: COVER
+              bg_image_opa: 50%
+              image_recolor_opa: COVER
+              image_recolor: 0x000000              
+             # image_recolor: 0xffffff
+             # image_recolor_opa: 99%
+              bg_color: 0xffa000
+              outline_color: 0x000000
+              outline_width: 8
+             # bg_image_recolor_opa: 99%
+             # bg_image_recolor: 0xffffff              
+            #  outline_opa: 90% 
+
+        - button:
+            y: 230
+            x: 350
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+            id: ply_button
+            widgets:
+              - image:
+                  align: CENTER
+                  src: playpause 
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350 
+              - animimg:
+                  align: CENTER
+                  id: anim_id3
+                  src: [ playpause_2, playpause ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id3
+                      repeat_count: 5
+        #            duration: 300ms              
+                - homeassistant.service:
+                    service: media_player.media_play_pause
+                    data:
+                      entity_id: media_player.television
+
+
+        - button: 
+            y: 65
+            x: 350
+            width: 150
+            height: 150
+            bg_color: 0xffffff            
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+            widgets:
+              - image:
+                  align: CENTER
+                  src: yt_2       
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0xaa0100 
+              - animimg:
+                  align: CENTER
+                  id: anim_id4
+                  src: [ yt_2, yt ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0xaa0100
+                  auto_start: false                             
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%  
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id4
+                      repeat_count: 5
+        #            duration: 300ms                  
+                - homeassistant.service:
+                    service: script.turn_on
+                    data:
+                      entity_id: script.smarttube                    
+     
+                                                                                                                                                                
+
+        - button: 
+            y: -265
+            x: 350
+            id: ac_pic
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+           # checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: ac_btn
+                  image_recolor_opa: COVER
+                  image_recolor: 0xffffff   
+            on_press:           
+              - homeassistant.service:
+                  service: switch.toggle
+                  data:
+                    entity_id: switch.air_conditioner   
+          #  pressed: # set some button colors to be different in pressed state
+          #   # bg_color: 0xffffff
+          #   # bg_grad_color: 0x00334d
+          #    bg_opa: TRANSP
+            checked: # set some button colors to be different in checked state
+          #   # bg_color: 0xffffff
+          #   # bg_grad_color: 0x03324A
+              bg_opa: 90%
+              bg_image_opa: 50%
+              #image_recolor: 0xffffff
+              #image_recolor_opa: 99%
+              bg_color: 0x4dd0e1
+              bg_image_recolor_opa: COVER                
+              outline_color: 0x000000
+              outline_width: 8
+              image_recolor_opa: COVER
+              image_recolor: 0x000000
+              #bg_image_recolor_opa: 99%
+              #bg_image_recolor: 0xffffff  
+
+
+        - button: 
+            y: -100
+            x: 350
+            #id: ac_id
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+           # checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: dlight_2         
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0xecbf8b                         
+              - animimg:
+                  align: CENTER
+                  id: anim_id6
+                  src: [ dlight_2, dlight ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0xecbf8b
+                  auto_start: false                             
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%  
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id6
+                      repeat_count: 5
+        #            duration: 300ms   
+                - homeassistant.service:
+                    service: script.turn_on
+                    data:
+                      entity_id: script.attic_bright         
+
+        - button:
+            y: 230
+            x: 175
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+            id: sony_h
+            widgets:
+              - image:
+                  align: CENTER
+                  src: sony_home_2
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350      
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER                 
+              - animimg:
+                  align: CENTER
+                  id: anim_id7
+                  src: [ sony_home_2, sony_home ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id7
+                      repeat_count: 5
+        #            duration: 300ms     
+                - homeassistant.service:
+                    service: script.toggle
+                    data:
+                      entity_id: script.sony_home
+
+
+        - button: 
+            y: 65
+            x: 175
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10% 
+            widgets:
+              - image:
+                  align: CENTER
+                  src: sony_input_2_2
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0xffffff                      
+              - animimg:
+                  align: CENTER
+                  id: anim_id8
+                  src: [ sony_input_2_2, sony_input_2 ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0xffffff
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id8
+                      repeat_count: 5
+        #            duration: 300ms     
+                - homeassistant.service:
+                    service: script.turn_on
+                    data:
+                      entity_id: script.sony_input_2                 
+     
+                                                                                                                                                                
+
+        - button: 
+            y: -265
+            x: 175
+         #   id: ac_pic
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+           # checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: kodi_icon_2
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x4dd0e1
+              - animimg:
+                  align: CENTER
+                  id: anim_id9
+                  src: [ kodi_icon_2, kodi_icon ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x4dd0e1
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id9
+                      repeat_count: 5
+        #            duration: 300ms 
+                - homeassistant.service:
+                    service: script.turn_on
+                    data:
+                      entity_id: script.sony_input_four                 
+
+        - button: 
+            y: -100
+            x: 175
+            #id: ac_id
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            #bg_image_opa: 10%
+           # checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: sony_back_2 
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350                                   
+              - animimg:
+                  align: CENTER
+                  id: anim_id10
+                  src: [ sony_back_2, sony_back ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id10
+                      repeat_count: 5
+        #            duration: 300ms 
+                - homeassistant.service:
+                    action: script.toggle
+                    data:
+                      entity_id: script.sony_back 
+
+        - button:
+            y: -50
+            x: -175
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+           # id: sony_h
+            widgets:
+              - image:
+                  align: CENTER
+                  src: dir_down_2
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350                       
+              - animimg:
+                  align: CENTER
+                  id: anim_id11
+                  src: [ dir_down_2, dir_down ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id11
+                      repeat_count: 5
+        #            duration: 300ms 
+                - homeassistant.service:
+                    action: script.toggle
+                    data:               
+                      entity_id: script.sony_down
+
+
+        - button: 
+            y: -50
+            x: -350
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+            widgets: 
+              - image: 
+                  align: CENTER
+                  src: dir_up       
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER                            
+                  image_recolor: 0x6df350   
+              - animimg:
+                  align: CENTER
+                  id: anim_id12
+                  src: [ dir_up_2, dir_up ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id12
+                      repeat_count: 5
+        #            duration: 300ms 
+                - homeassistant.service:
+                    action: script.toggle
+                    data:               
+                      entity_id: script.sony_up
+                                                                                                                                                                
+
+        - button: 
+            y: -50
+            x: 0
+         #   id: ac_pic
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+           # checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: dir_right_2
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350           
+              - animimg:
+                  align: CENTER
+                  id: anim_id13
+                  src: [ dir_right_2, dir_right ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id13
+                      repeat_count: 5
+        #            duration: 300ms 
+                - homeassistant.service:
+                    action: script.toggle
+                    data:               
+                      entity_id: script.sony_right
+
+        - button: 
+            y: -50
+            x: -525
+            #id: ac_id
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP   
+            bg_image_recolor_opa: COVER          
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: TRANSP 
+           # checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: dir_left_2      
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: 50%
+                  image_recolor: 0x6df350            
+              - animimg:
+                  align: CENTER
+                  id: anim_id14
+                  src: [ dir_left_2, dir_left ]
+                  duration: 150ms
+                 # outline_opa: COVER
+            #      outline_color: 0xffffff
+            #      outline_width: 4
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x6df350
+                  auto_start: false                   
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%         
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id14
+                      repeat_count: 5
+        #            duration: 300ms 
+                - homeassistant.service:
+                    action: script.toggle
+                    data:
+                      entity_id: script.sony_left
+
+        - button: 
+            y: 230
+            x: -525
+            width: 170
+            height: 170
+            bg_color: 0xffffff 
+            bg_opa: 25%
+            bg_image_recolor_opa: COVER         
+            outline_width: 4
+            outline_opa: COVER
+            outline_color: 0x9e9fa0
+            align: CENTER
+            widgets:
+              - image:
+                  align: CENTER
+                  src: darth   
+                  image_recolor_opa: 95%
+                  image_recolor: 0x000000
+            #      image_recolor: 0x9e9fa0
+            pressed: # set some button colors to be different in pressed state             
+               bg_color: 0xd84315
+           #    bg_grad_color: 0x00334d
+               bg_opa: COVER
+               outline_width: 8
+               outline_opa: COVER
+               outline_color: 0xffffff
+               image_recolor_opa: 95%
+               image_recolor: 0x000000
+          #     bg_image_recolor_opa: COVER
+               bg_image_opa: COVER
+               bg_image_recolor: 0xffffff
+            on_short_click:
+              - homeassistant.service:
+                  action: media_player.volume_mute
+                  data:
+                     entity_id: media_player.sony_android_tv
+                     is_volume_muted: "true"
+              - homeassistant.service:
+                  action: media_player.volume_mute
+                  data:
+                     entity_id: media_player.coreelec
+                     is_volume_muted: "true"
+              - voice_assistant.start:             
+            on_long_press:
+                - voice_assistant.start:
+                    silence_detection: false
+            on_release:
+           #     - voice_assistant.stop:
+            #    - delay: 200ms
+                - if:
+                    condition:
+                      not:
+                         voice_assistant.is_running:
+                    then:
+                      - voice_assistant.stop:                       
+
+        - button: 
+            y: 230
+            x: 0
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: 25%
+            #bg_image_recolor_opa: COVER
+            #bg_image_recolor: 0xffffff
+            outline_width: 5
+            bg_image_opa: COVER
+            outline_opa: 60%
+            outline_color: 0xffffff
+            align: CENTER
+            widgets:
+              - image:
+                  align: CENTER
+                  src: stop_mdi
+                  image_recolor_opa: COVER
+                  image_recolor: 0xfb0100   
+            pressed: # set some button colors to be
+               bg_image_recolor_opa: COVER
+               bg_image_recolor: 0x000000              
+               bg_color: 0x7cb342
+           #    bg_grad_color: 0x00334d
+               bg_opa: COVER
+               image_recolor_opa: COVER
+               image_recolor: 0x000000
+          #     bg_color_opa: 90%
+          #     bg_image_recolor_opa: COVER
+          #     bg_image_opa: COVER
+           #    bg_image_recolor: 0xffffff
+               outline_width: 8
+               outline_opa: COVER
+               outline_color: 0x000000                
+            on_press:    
+              - voice_assistant.stop:
+          #    - delay: 50ms
+           #   - micro_wake_word.stop:                           
+           #   - delay: 200ms
+           #   - if:
+           #       condition:
+           #         not:
+           #           voice_assistant.is_running:
+           #       then:
+           #         - micro_wake_word.start:                
+
+    - id: second_page
+      bg_color: 0x021852    
+      widgets:
+        - label:
+            align: TOP_RIGHT
+            text: 'Hello World!'  
+
+        - slider:
+            x: 75
+            y: 245
+            width: 700
+            id: slider_media_player_temp
+           # bg_color: 0x000000
+            pad_all: 2
+            min_value: 0
+            max_value: 100
+            adv_hittest: true
+            #adjustable: true
+            on_release:            
+                - homeassistant.service:
+                    service: media_player.volume_set
+                    data:
+                      entity_id: $tv_vol_control
+                      volume_level: !lambda return (x / 100);        
+ 
+# Example grid layout
+    - id: third_page
+      bg_color: 0x021852    
+      widgets:  
+      - obj:
+          layout:
+            type: grid
+            grid_row_align: end
+            grid_rows: [100px, fr(1), content]
+            grid_columns: [fr(1), fr(1)]
+            pad_row: 6px
+            pad_column: 0
+          widgets:
+            - obj:
+                grid_cell_row_pos: 0
+                grid_cell_column_pos: 0
+            - obj:
+                grid_cell_row_pos: 0
+                grid_cell_column_pos: 1
+            - obj:
+                grid_cell_row_pos: 2
+                grid_cell_column_pos: 0
+            - label:
+                text: "This will be placed in row 1, column 0"
+            - label:
+                text: "This will be placed in row 1, column 1"
+            - label:
+                text: "This will be placed in row 2, column 1, since 2/0 is occupied"       
+        
+  style_definitions:
+    - id: header_footer
+      bg_color: 0xffffff
+      #bg_color: 0x2F8CD8
+      bg_grad_color: 0xffffff
+      bg_grad_dir: VER
+      bg_opa: TRANSP
+      outline_width: 3
+      radius: 0
+      pad_all: 0
+      pad_row: 0
+      pad_column: 0
+      border_color: 0xffffff
+      text_color: 0xffffff
+      line_color: 0xffffff
+      width: 100%
+      height: 40                 
+                     
+                                       
+
+# The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
+select:
+  - platform: es8388
+    dac_output:
+      name: DAC Output
+    adc_input_mic:
+      name: ADC Input Mic
+
+  - platform: template
+    id: wifi_antenna_select
+    name: "WiFi Antenna"
+    options:
+      - "Internal"
+      - "External"
+    optimistic: true
+    on_value:
+      - if:
+          condition:
+            lambda: return i == 0;
+          then:
+            - switch.turn_off: wifi_antenna_int_ext
+          else:
+            - switch.turn_on: wifi_antenna_int_ext
+
+  - platform: template
+    name: "Wake word sensitivity"
+    optimistic: true
+    initial_option: Slightly sensitive
+    restore_value: true
+    entity_category: config
+    options:
+      - Slightly sensitive
+      - Moderately sensitive
+      - Very sensitive
+    on_value:
+      # Sets specific wake word probabilities computed for each particular model
+      # Note probability cutoffs are set as a quantized uint8 value, each comment has the corresponding floating point cutoff
+      # False Accepts per Hour values are tested against all units and channels from the Dinner Party Corpus.
+      # These cutoffs apply only to the specific models included in the firmware: okay_nabu@20241226.3, hey_jarvis@v2, hey_mycroft@v2
+      lambda: |-
+        if (x == "Slightly sensitive") {
+          id(okay_nabu).set_probability_cutoff(217);    // 0.85 -> 0.000 FAPH on DipCo (Manifest's default)
+          id(hey_jarvis).set_probability_cutoff(247);   // 0.97 -> 0.563 FAPH on DipCo (Manifest's default)
+          id(hey_mycroft).set_probability_cutoff(253);  // 0.99 -> 0.567 FAPH on DipCo
+        } else if (x == "Moderately sensitive") {
+          id(okay_nabu).set_probability_cutoff(176);    // 0.69 -> 0.376 FAPH on DipCo
+          id(hey_jarvis).set_probability_cutoff(235);   // 0.92 -> 0.939 FAPH on DipCo
+          id(hey_mycroft).set_probability_cutoff(242);  // 0.95 -> 1.502 FAPH on DipCo (Manifest's default)
+        } else if (x == "Very sensitive") {
+          id(okay_nabu).set_probability_cutoff(143);    // 0.56 -> 0.751 FAPH on DipCo
+          id(hey_jarvis).set_probability_cutoff(212);   // 0.83 -> 1.502 FAPH on DipCo
+          id(hey_mycroft).set_probability_cutoff(237);  // 0.93 -> 1.878 FAPH on DipCo
+        }
+
+
+i2s_audio:
+  - id: mic_bus
+    i2s_lrclk_pin: GPIO29
+    i2s_bclk_pin: GPIO27
+    i2s_mclk_pin: GPIO30
+
+audio_adc:
+  - platform: es7210
+    id: es7210_adc
+    bits_per_sample: 16bit
+    sample_rate: 16000
+
+microphone:
+  - platform: i2s_audio
+    id: tab5_microphone
+    i2s_din_pin: GPIO28
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    adc_type: external
+
+audio_dac:
+  - platform: es8388
+    id: es8388_dac
+
+speaker:
+  - platform: i2s_audio
+    id: tab5_speaker
+    i2s_dout_pin: GPIO26
+    audio_dac: es8388_dac
+    dac_type: external
+    channel: mono
+    buffer_duration: 100ms
+    bits_per_sample: 16bit
+    sample_rate: 48000
+
+media_player:
+  - platform: speaker
+    name: None
+    id: external_media_player
+    internal: false
+    volume_increment: 0.05
+    volume_min: 0.4
+    volume_max: 0.85
+    announcement_pipeline:
+      speaker: tab5_speaker
+      format: FLAC
+      sample_rate: 48000
+      num_channels: 1
+    on_announcement:
+      # Stop the wake word (mWW or VA) if the mic is capturing
+      - if:
+          condition:
+            - microphone.is_capturing:
+          then:
+            - micro_wake_word.stop:     
+    on_idle:
+      # Since VA isn't running, this is the end of user-intiated media playback. Restart the wake word.
+      - if:
+          condition:
+            not:
+              voice_assistant.is_running:
+          then:
+            - micro_wake_word.start:                            
+
+    files:
+      - id: wake_word_triggered_sound
+        file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/wake_word_triggered.flac    
+
+micro_wake_word:
+  id: mww
+  microphone:
+    microphone: tab5_microphone
+  models:
+    - model: https://github.com/kahrendt/microWakeWord/releases/download/okay_nabu_20241226.3/okay_nabu.json
+      id: okay_nabu
+    - model: hey_jarvis
+      id: hey_jarvis
+    - model: hey_mycroft
+      id: hey_mycroft
+  vad:
+  on_wake_word_detected:
+   # If a timer is ringing: Stop it, do not start the voice assistant (We can stop timer from voice!)
+    #- if:
+    #    condition:
+    #      switch.is_on: wake_sound
+    #    then:
+    #      - script.execute:
+    #          id: play_sound
+    #          priority: true
+    #          sound_file: !lambda return id(wake_word_triggered_sound);
+    #      - delay: 250ms
+    - voice_assistant.start:
+        wake_word: !lambda return wake_word;
+
+voice_assistant:
+  id: va
+  microphone: tab5_microphone
+  media_player: external_media_player
+  micro_wake_word: mww
+  on_end:
+    # Wait a short amount of time to see if an announcement starts
+    - wait_until:
+        condition:
+          - media_player.is_announcing:
+        timeout: 0.5s
+    # Announcement is finished and the I2S bus is free
+    - wait_until:
+        - and:
+            - not:
+                media_player.is_announcing:
+            - not:
+                speaker.is_playing:
+    - micro_wake_word.start:
+  on_client_connected:
+    - micro_wake_word.start:
+  on_client_disconnected:
+    - micro_wake_word.stop:                 
+
+
+button:
+  - platform: restart
+    id: restart_button
+    name: "Restart"
+    entity_category: config
+    disabled_by_default: true
+    icon: "mdi:restart" 
+    
+script:
+  # Script executed when we want to play sounds on the device.
+  - id: play_sound
+    parameters:
+      priority: bool
+      sound_file: "audio::AudioFile*"
+    then:
+      - lambda: |-
+          if (priority) {
+            id(external_media_player)
+              ->make_call()
+              .set_command(media_player::MediaPlayerCommand::MEDIA_PLAYER_COMMAND_STOP)
+              .set_announcement(true)
+              .perform();
+          }
+          if ( (id(external_media_player).state != media_player::MediaPlayerState::MEDIA_PLAYER_STATE_ANNOUNCING ) || priority) {
+            id(external_media_player)
+              ->play_file(sound_file, true, false);
+          }
